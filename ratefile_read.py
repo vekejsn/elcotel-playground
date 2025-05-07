@@ -1,6 +1,7 @@
+from pydantic import BaseModel, Field
+from typing import List, Optional
 from pathlib import Path
-import struct
-import json
+import sys
 
 ENUM_BAND_CATEGORIES = {
     0: '!',
@@ -14,17 +15,95 @@ ENUM_BAND_CATEGORIES = {
     8: 'Misc',
 }
 
-ENUM_RATE_VALS = {
-    254: 'Unlim.',
-    255: 'Restr.'
-}
 
-ENUM_DIAL_PLANS = {
-    0: '7 digit',
-    1: '1 + 7 digit',
-    2: '10 digit (NPA)',
-    3: '1 + 10 digit (NPA)',
-}
+class RateFileHeader(BaseModel):
+    is_ratefile: bool
+    filesize: int
+    description: str
+    local_band_count: int
+    intra_lata_band_count: int
+    inter_lata_band_count: int
+    fcc_band_count: int
+    corridor_band_count: int
+    canadian_band_count: int
+    extended_band_count: int
+    misc_band_count: int
+    home_npa: str
+    home_nxx: str
+
+
+class Surcharge(BaseModel):
+    band_category: int
+    coin: int
+    paof_bell: int
+    paof_comm: int
+    paof_collect: int
+    paof_addtnl: int
+    chip_card: int
+    spare_1: int
+    spare_2: int
+
+
+class NxxEntry(BaseModel):
+    nxx: int
+    enabled: bool
+
+
+class NxxTable(BaseModel):
+    npa: int
+    price_band: int
+    dial_pattern: int
+    flags: int
+    nxx_entries: List[NxxEntry] = Field(default_factory=list)
+
+
+class NpaGroup(BaseModel):
+    npa: int
+    nxx_table_count: int
+    unlisted_price_band: int
+    unlisted_dial_pattern: int
+    flags: int
+
+
+class PriceBands(BaseModel):
+    band_index: int
+    price_code: int
+    group_sequence: int
+    init_rate: int
+    init_time: int
+    addtnl_rate: int
+    addtnl_time: int
+
+
+class PricePlan(BaseModel):
+    # NPA
+    npa_group_count: int
+    npa_group_offset: int
+    # NXX
+    nxx_table_count: int
+    nxx_table_offset: int
+    # Price bands
+    price_band_count: int
+    price_band_offset: int
+    local_band_count: int
+    intralata_band_count: int
+    interlata_band_count: int
+    interstate_band_count: int
+    corridor_band_count: int
+    canadian_band_count: int
+    extended_band_count: int
+    misc_band_count: int
+    # Price bands
+    price_bands: List[PriceBands] = Field(default_factory=list)
+
+
+class RateFile(BaseModel):
+    header: RateFileHeader
+    surcharges: List[Surcharge] = Field(default_factory=list)
+    price_plan: PricePlan
+    npa_groups: List[NpaGroup] = Field(default_factory=list)
+    nxx_tables: List[NxxTable] = Field(default_factory=list)
+
 
 def decompress(raw_content_compressed: bytes):
     i = 0
@@ -41,41 +120,29 @@ def decompress(raw_content_compressed: bytes):
 
     return decompressed
 
-def print_format(key, value, key_width=32):
-    print(f'{key:>{key_width}}: {value}')
 
-def read_str(data, start, length):
-    # Reads a fixed-length string up to the first NUL, then strips whitespace.
-    return data[start:start+length].split(b'\x00')[0].decode('ascii', errors='ignore').strip()
+def parse_surcharges(data: bytes) -> List[Surcharge]:
+    """Parse surcharges from the decompressed data."""
+    surcharges = []
+    INIT_OFFSET = 800
+    for i in range(0, 8):
+        surcharges.append(
+            Surcharge(
+                band_category=i,
+                coin=data[INIT_OFFSET + i],
+                paof_bell=data[INIT_OFFSET + 8 + i],
+                paof_comm=data[INIT_OFFSET + 16 + i],
+                paof_collect=data[INIT_OFFSET + 24 + i],
+                paof_addtnl=data[INIT_OFFSET + 32 + i],
+                chip_card=data[INIT_OFFSET + 40 + i],
+                spare_1=data[INIT_OFFSET + 48 + i],
+                spare_2=data[INIT_OFFSET + 56 + i],
+            )
+        )
+    return surcharges
 
-def parse_header(data: bytes, verbose=False):
-    # In the original file the header is stored at fixed offsets.
-    description_offset = 209
-    description_length = data[description_offset]
-    description = data[description_offset + 1:description_offset + 1 + description_length].decode('ascii', errors='replace')
-    header_dict = {
-        'is_ratefile': data[24] == 1,
-        'filesize': int.from_bytes(data[1:5], byteorder='little'),
-        'description': description,
-        'local_band_count': data[152],
-        'intralata_band_count': data[153],
-        'interlata_band_count': data[154],
-        'interstate_band_count': data[155],
-        'corridor_band_count': data[156],
-        'canadian_band_count': data[157],
-        'extended_band_count': data[158],
-        'misc_band_count': data[159],
-        'home_npa': data[18:21].decode(errors='ignore'),
-        'home_nxx': data[21:24].decode(errors='ignore'),
-    }
 
-    if verbose:
-        print('\nHeader:')
-        for key, value in header_dict.items():
-            print_format(key, value)
-    return header_dict
-
-def determine_band(index, offsets):
+def determine_price_code(index, offsets):
     if index < offsets['intralata']:
         return 0
     elif index < offsets['interlata']:
@@ -93,46 +160,36 @@ def determine_band(index, offsets):
     else:
         return 7
 
-def format_price(value):
-    if value == 254:
-        return 'Unlimited'
-    elif value == 255:
-        return 'Restricted'
-    elif value == 0:
-        return 'Free'
-    else:
-        return f'{(value * 0.05):.2f}'
 
-def parse_prices(data: bytes, verbose=False):
+def parse_price_plan(data: bytes) -> PricePlan:
+    """Parse the price plan from the decompressed data."""
+    price_plan = PricePlan(
+        npa_group_count=data[887],
+        npa_group_offset=data[876] * 256 + data[875],
+        nxx_table_count=data[889],
+        nxx_table_offset=data[880] * 256 + data[879],
+        price_band_count=data[888],
+        price_band_offset=data[878] * 256 + data[877] + 1,
+        local_band_count=data[864],
+        intralata_band_count=data[865],
+        interlata_band_count=data[866],
+        interstate_band_count=data[867],
+        corridor_band_count=data[868],
+        canadian_band_count=data[869],
+        extended_band_count=data[870],
+        misc_band_count=data[871],
+    )
 
-    data = data[268:]  # Skip the header
-    data = decompress(data)
-
-    prices_dict = {
-        'group_count': data[887],
-        'price_count': data[888],
-        'nxx_count': data[889],
-        'local_count': data[864],
-        'intralata_count': data[865],
-        'interlata_count': data[866],
-        'interstate_count': data[867],
-        'corridor_count': data[868],
-        'canadian_count': data[869],
-        'extended_count': data[870],
-        'misc_count': data[871],
-        'rate_band_offset': data[878] * 256 + data[877] + 1,
-        'nxx_offset': data[880] * 256 + data[879],
-    }
-
+    # Since we don't the information which Price Band is what group, we have to manually calculate it
     offsets = {
         'local': 0,
-        'intralata': prices_dict['local_count'],
-        'interlata': prices_dict['local_count'] + prices_dict['intralata_count'],
-        'interstate': prices_dict['local_count'] + prices_dict['intralata_count'] + prices_dict['interlata_count'],
-        'corridor': prices_dict['local_count'] + prices_dict['intralata_count'] + prices_dict['interlata_count'] + prices_dict['interstate_count'],
-        'canadian': prices_dict['local_count'] + prices_dict['intralata_count'] + prices_dict['interlata_count'] + prices_dict['interstate_count'] + prices_dict['corridor_count'],
-        'extended': prices_dict['local_count'] + prices_dict['intralata_count'] + prices_dict['interlata_count'] + prices_dict['interstate_count'] + prices_dict['corridor_count'] + prices_dict['canadian_count'],
-        'misc': prices_dict['local_count'] + prices_dict['intralata_count'] + prices_dict['interlata_count'] + prices_dict['interstate_count'] + prices_dict['corridor_count'] + prices_dict['canadian_count'] + prices_dict['extended_count'],
+        'intralata': price_plan.local_band_count,
+        'interlata': price_plan.local_band_count + price_plan.intralata_band_count,
+        'interstate': price_plan.local_band_count + price_plan.intralata_band_count + price_plan.interlata_band_count,
+        'corridor': price_plan.local_band_count + price_plan.intralata_band_count + price_plan.interlata_band_count + price_plan.interstate_band_count,
+        'canadian': price_plan.local_band_count + price_plan.intralata_band_count + price_plan.interlata_band_count + price_plan.interstate_band_count + price_plan.corridor_band_count,
+        'extended': price_plan.local_band_count + price_plan.intralata_band_count + price_plan.interlata_band_count + price_plan.interstate_band_count + price_plan.corridor_band_count + price_plan.canadian_band_count,
+        'misc': price_plan.local_band_count + price_plan.intralata_band_count + price_plan.interlata_band_count + price_plan.interstate_band_count + price_plan.corridor_band_count + price_plan.canadian_band_count + price_plan.extended_band_count,
     }
     band_offsets = {
         0: 0,
@@ -144,143 +201,136 @@ def parse_prices(data: bytes, verbose=False):
         6: 0,
         7: 0,
     }
-
-    if verbose:
-        print('\nPrices:')
-        for key, value in prices_dict.items():
-            print_format(key, value)
-
     # The rate data block starts at the offset specified in the header.
-    cursor = prices_dict['rate_band_offset'] - 1
-    rate_bands = []
-    for i in range(0, prices_dict['price_count']):
-        band = {
-            'index': i + 1,
-            'band': determine_band(i, offsets),
-        }
-        band['band_index'] = band_offsets[band['band']] + 1
-        band_offsets[band['band']] += 1
-        band.update({
-            'id': i + 1,
-            'band_str': ENUM_BAND_CATEGORIES[band['band'] + 1],
-            'initial_rate': data[cursor],
-            'initial_rate_str': format_price(data[cursor]),
-            'initial_time': data[cursor + 1],
-            'additional_rate': data[cursor + 2],
-            'additional_rate_str': format_price(data[cursor + 2]),
-            'additional_time': data[cursor + 3],
-        })
-        rate_bands.append(band)
+    price_bands = []
+    cursor = price_plan.price_band_offset - 1
+    for i in range(0, price_plan.price_band_count):
+        price_code = determine_price_code(i, offsets)
+        band_offsets[price_code] += 1
+        price_bands.append(
+            PriceBands(
+                band_index=i + 1,
+                price_code=price_code,
+                group_sequence=band_offsets[price_code],
+                init_rate=data[cursor],
+                init_time=data[cursor + 1],
+                addtnl_rate=data[cursor + 2],
+                addtnl_time=data[cursor + 3],
+            )
+        )
         cursor += 4
+    price_plan.price_bands = price_bands
+    return price_plan
 
-    if verbose:
-        print('Rate Bands:')
-        print('Band\tIndex\tInitR\tInitT\tAddR\tAddT')
-        for group in rate_bands:
-            print(f'{group["band_str"]}\t{group["band_index"]}\t{group["initial_rate_str"]}\t{group["initial_time"]}\t{group["additional_rate_str"]}\t{group["additional_time"]}')
 
-    # The NXX table starts at the offset specified in the header.
-    cursor = prices_dict['nxx_offset']
-    nxx_table = []
-    for i in range(0, prices_dict['nxx_count']):
+def parse_npa_groups(data: bytes, group_count: int) -> List[NpaGroup]:
+    """Parse NPA group headers from the decompressed R94 data (starting at offset 891)."""
+    cursor = 890
+    groups = []
+    for _ in range(group_count):
+        groups.append(
+            NpaGroup(
+                npa=data[cursor + 1] * 256 + data[cursor],
+                nxx_table_count=data[cursor + 2],
+                unlisted_price_band=data[cursor + 3],
+                unlisted_dial_pattern=data[cursor + 4],
+                flags=data[cursor + 5],
+            )
+        )
+        cursor += 6
+    return groups
+
+
+def determine_npa(index, npa_offset_map):
+    """Determine the NPA for a given index using the NPA offset map."""
+    for npa, offsets in npa_offset_map.items():
+        for offset in offsets:
+            if offset[0] <= index < offset[1]:
+                return npa
+    return None
+
+
+def parse_nxx_tables(data: bytes, table_count: int, table_offset: int, npa_groups: List[NpaGroup]) -> List[NxxTable]:
+    """Parse NXX tables from the decompressed R94 data."""
+    # Create an offset map for the NPA groups so we can assign the NPA to the NXX tables
+    # NPA: [[low, high], [low, high], ...]
+    npa_offset_map = {}
+    offset = 0
+    for group in npa_groups:
+        if group.npa not in npa_offset_map:
+            npa_offset_map[group.npa] = []
+        npa_offset_map[group.npa].append(
+            [offset, offset + group.nxx_table_count])
+        offset += group.nxx_table_count
+    cursor = table_offset
+    nxx_tables = []
+    for i in range(table_count):
         nxx_data_raw = data[cursor + 3:cursor + 103]
         nxx_entries = [
-            {'nxx': (200 + j), 'enabled': bool((nxx_data_raw[j // 8] >> (j % 8)) & 1)} for j in range(800)
+            NxxEntry(nxx=(200 + j), enabled=bool((nxx_data_raw[j // 8] >> (j % 8)) & 1)) for j in range(800)
         ]
-        nxx_entry = {
-            'price_band': data[cursor],
-            'dial_pattern': data[cursor + 1],
-            'dial_pattern_str': ENUM_DIAL_PLANS.get(data[cursor + 1], f'Unknown ({data[cursor + 1]})'),
-            'flags': data[cursor + 2],
-            'nxx_entries': nxx_entries,
-        }
-        nxx_table.append(nxx_entry)
+        nxx_table = NxxTable(
+            npa=determine_npa(i, npa_offset_map),
+            price_band=data[cursor],
+            dial_pattern=data[cursor + 1],
+            flags=data[cursor + 2],
+            nxx_entries=nxx_entries,
+        )
+        nxx_tables.append(nxx_table)
         cursor += 103
-
-    # Groups
-    cursor = 890
-    intrastate_npas = []
-    for i in range(0, prices_dict['group_count']):
-        offset = cursor + (i * 6)
-        intrastate_npas.append({
-            'NPA': data[offset] + data[offset + 1] * 256,
-            'NXX_count': data[offset + 2],
-            'band': data[offset + 3],
-            'dial_plan': data[offset + 4],
-            'dial_plan_str': ENUM_DIAL_PLANS.get(data[offset + 4], f'Unknown ({data[offset + 4]})'),
-            'initial_price': data[offset + 5],
-        })
-
-    return prices_dict, rate_bands, nxx_table, intrastate_npas
-
-def parse_surcharges(data: bytes, verbose=False):
-    data = data[268:]  # Skip the header
-    data = decompress(data)
-    INIT_OFFSET = 800
-    surcharges = {}
-    for i in range(0, 8):
-        surcharges[ENUM_BAND_CATEGORIES[i + 1]] = {
-            'coin': data[INIT_OFFSET + i],
-            'coin_str': format_price(data[INIT_OFFSET + i]),
-            'paof_bell': data[INIT_OFFSET + i + 8],
-            'paof_bell_str': format_price(data[INIT_OFFSET + i + 8]),
-            'paof_comm': data[INIT_OFFSET + i + 16],
-            'paof_comm_str': format_price(data[INIT_OFFSET + i + 16]),
-            'paof_collect': data[INIT_OFFSET + i + 24],
-            'paof_collect_str': format_price(data[INIT_OFFSET + i + 24]),
-            'paof_addtnl': data[INIT_OFFSET + i + 32],
-            'paof_addtnl_str': format_price(data[INIT_OFFSET + i + 32]),
-            'chip_card': data[INIT_OFFSET + i + 40],
-            'chip_card_str': format_price(data[INIT_OFFSET + i + 40]),
-        }
-    if verbose:
-        print('\nSurcharges:')
-        for key, value in surcharges.items():
-            print_format(f'Band {key}', value)
-    return surcharges
+    return nxx_tables
 
 
-def read_ratefile(filename, verbose=False):
-    file = Path(filename)
-    if not file.exists():
-        raise FileNotFoundError(f'File not found: {filename}')
-    if verbose:
-        print(f'Reading ratefile: {filename}')
-        print(f'Raw size: {file.stat().st_size} bytes')
-    # Read the entire file as raw bytes
-    r94_content = file.read_bytes()
-    # Parse header
-    if verbose:
-        print('Parsing header...')
-    header = parse_header(r94_content, verbose=verbose)
-    # Parse rate entries
-    if verbose:
-        print('Parsing prices...')
-    prices_dict, rate_entries, nxx_table, intrastate_npas = parse_prices(r94_content, verbose=verbose)
-    # You might want to return both header and entries for further use.
-    if verbose:
-        print('Parsing surcharges...')
-    surcharges = parse_surcharges(r94_content, verbose=verbose)
-    return {
-        'header': header,
-        'prices': prices_dict,
-        'rate_entries': rate_entries,
-        'nxx_table': nxx_table,
-        'intrastate_npas': intrastate_npas,
-        'surcharges': surcharges,
-    }
+def read_ratefile(file_path: str) -> RateFile:
+    """Read a rate file and return a RateFile object."""
+    with open(file_path, 'rb') as f:
+        data = f.read()
+
+    # Read the header
+    header = RateFileHeader(
+        is_ratefile=data[24] == 1,
+        filesize=int.from_bytes(data[1:5], byteorder='little'),
+        description=data[210:210 + data[209]
+                         ].decode('ascii', errors='replace'),
+        local_band_count=data[152],
+        intra_lata_band_count=data[153],
+        inter_lata_band_count=data[154],
+        fcc_band_count=data[155],
+        corridor_band_count=data[156],
+        canadian_band_count=data[157],
+        extended_band_count=data[158],
+        misc_band_count=data[159],
+        home_npa=data[18:21].decode(errors='ignore'),
+        home_nxx=data[21:24].decode(errors='ignore'),
+    )
+
+    # Uncompress the data
+    decompressed_data = decompress(data[268:])
+
+    # Check if the decompressed data is valid
+    if not decompressed_data:
+        raise ValueError("Decompressed data is empty or invalid.")
+    if not len(decompressed_data) == header.filesize:
+        raise ValueError(
+            f"Decompressed data size {len(decompressed_data)}B does not match expected size {header.filesize}B.")
+
+    # Parse the surcharges
+    surcharges = parse_surcharges(decompressed_data)
+
+    # Read the price bands
+    price_plan = parse_price_plan(decompressed_data)
+
+    # Read intra-state NPA information
+    npa_groups = parse_npa_groups(
+        decompressed_data, price_plan.npa_group_count)
+
+    # And the NXX tables
+    nxx_tables = parse_nxx_tables(
+        decompressed_data, price_plan.nxx_table_count, price_plan.nxx_table_offset, npa_groups)
+
+    return RateFile(header=header, surcharges=surcharges, price_plan=price_plan, npa_groups=npa_groups, nxx_tables=nxx_tables)
+
 
 if __name__ == '__main__':
-    import sys
-    if len(sys.argv) < 3:
-        print("Usage:", sys.argv[0], sys.argv[1], 'input.r94', 'output.json')
-        sys.exit(1)
-    json_filename = sys.argv[1]
-    output_filename = sys.argv[2]
-    verbose = len(sys.argv) > 3 and sys.argv[3] == '--verbose'
-    parsed = read_ratefile(json_filename, verbose=verbose)
-    # Write the parsed data to a JSON file
-    with open(output_filename, 'w') as f:
-        json.dump(parsed, f, indent=4)
-    if verbose:
-        print(f'Parsed data written to {output_filename}')
+    parse = read_ratefile('elcotel-playground/stock.R94')
+    print(parse)
