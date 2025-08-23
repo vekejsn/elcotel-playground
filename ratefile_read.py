@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from pathlib import Path
 import sys
+import click
 
 ENUM_BAND_CATEGORIES = {
     0: '!',
