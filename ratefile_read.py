@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "pydantic",
+#   "click",
+# ]
+# ///
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from pathlib import Path
@@ -331,6 +339,18 @@ def read_ratefile(file_path: str) -> RateFile:
     return RateFile(header=header, surcharges=surcharges, price_plan=price_plan, npa_groups=npa_groups, nxx_tables=nxx_tables)
 
 
-if __name__ == '__main__':
-    parse = read_ratefile('elcotel-playground/stock.R94')
+@click.command()
+@click.option(
+    '--file', '-f', default='elcotel-playground/stock.R94', help='Path to the rate file'
+)
+def main(file):
+    try:
+        parse = read_ratefile(file)
+    except FileNotFoundError:
+        print(f'File not found: {file}')
+        sys.exit(1)
     print(parse)
+
+
+if __name__ == '__main__':
+    main()
