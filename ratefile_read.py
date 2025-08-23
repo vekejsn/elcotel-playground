@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "pydantic",
+
+# ]
+# ///
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from pathlib import Path
