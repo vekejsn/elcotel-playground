@@ -1,14 +1,15 @@
-#!/usr/bin/env python3
-"""
-This script inverts the ratefile parser. It reads a JSON file (produced by the original parser)
-and generates the corresponding binary ratefile (.R94) by rebuilding the header, the decompressed data block,
-and then compressing that block using the simple zero-run encoding used in the original.
-Usage: python generate_bin.py input.json output.R94
-"""
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "click",
+# ]
+# ///
 
-from pathlib import Path
 import json
 import struct
+from pathlib import Path
+
+import click
 
 # Enumerations from the original parser
 ENUM_BAND_CATEGORIES = {
@@ -212,11 +213,16 @@ def write_ratefile(json_filename, output_filename, verbose=False):
     if verbose:
         print(f"Wrote {output_filename} with {total_size} bytes.")
 
+@click.command()
+@click.argument('input_json', type=click.Path(exists=True))
+@click.argument('output_r94', type=click.Path())
+def main(input_json, output_r94):
+    """
+    This script inverts the ratefile parser. It reads a JSON file (produced by the original parser)
+    and generates the corresponding binary ratefile (.R94) by rebuilding the header, the decompressed data block,
+    and then compressing that block using the simple zero-run encoding used in the original.
+    """
+    write_ratefile(input_json, output_r94, verbose=True)
+
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) < 3:
-        print("Usage:", sys.argv[0], sys.argv[1], 'input.json', 'output.r94')
-        sys.exit(1)
-    json_filename = sys.argv[1]
-    output_filename = sys.argv[2]
-    write_ratefile(json_filename, output_filename, verbose=True)
+    main()
