@@ -13,15 +13,15 @@ import sys
 import click
 
 ENUM_BAND_CATEGORIES = {
-    0: '!',
-    1: 'Local',
-    2: 'IntraLATA',
-    3: 'InterLATA',
-    4: 'FCC',
-    5: 'Corridor',
-    6: 'Canadian',
-    7: 'Extended',
-    8: 'Misc',
+    0: "!",
+    1: "Local",
+    2: "IntraLATA",
+    3: "InterLATA",
+    4: "FCC",
+    5: "Corridor",
+    6: "Canadian",
+    7: "Extended",
+    8: "Misc",
 }
 
 
@@ -74,6 +74,13 @@ class NpaGroup(BaseModel):
     flags: int
 
 
+class NpaPriceEntry(BaseModel):
+    npa: int
+    raw_value: int
+    kind: str
+    price_band: Optional[int] = None
+
+
 class PriceBands(BaseModel):
     band_index: int
     price_code: int
@@ -110,6 +117,7 @@ class RateFile(BaseModel):
     header: RateFileHeader
     surcharges: List[Surcharge] = Field(default_factory=list)
     price_plan: PricePlan
+    npa_prices: List[NpaPriceEntry] = Field(default_factory=list)
     npa_groups: List[NpaGroup] = Field(default_factory=list)
     nxx_tables: List[NxxTable] = Field(default_factory=list)
 
@@ -121,8 +129,12 @@ def decompress(raw_content_compressed: bytes):
         byte = raw_content_compressed[i]
         if byte == 0:
             i += 1
+            if i >= len(raw_content_compressed):
+                raise ValueError(
+                    "Compressed stream ends with an incomplete zero-run marker."
+                )
             zeros_count = raw_content_compressed[i]
-            decompressed.extend(b'\x00' * zeros_count)
+            decompressed.extend(b"\x00" * zeros_count)
         else:
             decompressed.append(byte)
         i += 1
@@ -143,6 +155,7 @@ def parse_surcharges(data: bytes) -> List[Surcharge]:
                 paof_comm=data[INIT_OFFSET + 16 + i],
                 paof_collect=data[INIT_OFFSET + 24 + i],
                 paof_addtnl=data[INIT_OFFSET + 32 + i],
+                # The original VB code treats the remaining columns as spare bytes.
                 chip_card=data[INIT_OFFSET + 40 + i],
                 spare_1=data[INIT_OFFSET + 48 + i],
                 spare_2=data[INIT_OFFSET + 56 + i],
@@ -151,20 +164,51 @@ def parse_surcharges(data: bytes) -> List[Surcharge]:
     return surcharges
 
 
+def interpret_npa_price(raw_value: int) -> tuple[str, Optional[int]]:
+    """Preserve raw NPA price tokens while providing a light interpretation layer."""
+    if raw_value == 0:
+        return "restricted", None
+    if 1 <= raw_value <= 252:
+        return "price_band", raw_value
+    if raw_value == 253:
+        return "unlimited", None
+    if raw_value in (254, 255):
+        return "nxx_specific", None
+    return "unknown", None
+
+
+def parse_npa_prices(data: bytes) -> List[NpaPriceEntry]:
+    """Parse the 800-byte default NPA table for NPAs 200-999."""
+    entries = []
+    for offset in range(800):
+        npa = 200 + offset
+        raw_value = data[offset]
+        kind, price_band = interpret_npa_price(raw_value)
+        entries.append(
+            NpaPriceEntry(
+                npa=npa,
+                raw_value=raw_value,
+                kind=kind,
+                price_band=price_band,
+            )
+        )
+    return entries
+
+
 def determine_price_code(index, offsets):
-    if index < offsets['intralata']:
+    if index < offsets["intralata"]:
         return 0
-    elif index < offsets['interlata']:
+    elif index < offsets["interlata"]:
         return 1
-    elif index < offsets['interstate']:
+    elif index < offsets["interstate"]:
         return 2
-    elif index < offsets['corridor']:
+    elif index < offsets["corridor"]:
         return 3
-    elif index < offsets['canadian']:
+    elif index < offsets["canadian"]:
         return 4
-    elif index < offsets['extended']:
+    elif index < offsets["extended"]:
         return 5
-    elif index < offsets['misc']:
+    elif index < offsets["misc"]:
         return 6
     else:
         return 7
@@ -191,14 +235,34 @@ def parse_price_plan(data: bytes) -> PricePlan:
 
     # Since we don't the information which Price Band is what group, we have to manually calculate it
     offsets = {
-        'local': 0,
-        'intralata': price_plan.local_band_count,
-        'interlata': price_plan.local_band_count + price_plan.intralata_band_count,
-        'interstate': price_plan.local_band_count + price_plan.intralata_band_count + price_plan.interlata_band_count,
-        'corridor': price_plan.local_band_count + price_plan.intralata_band_count + price_plan.interlata_band_count + price_plan.interstate_band_count,
-        'canadian': price_plan.local_band_count + price_plan.intralata_band_count + price_plan.interlata_band_count + price_plan.interstate_band_count + price_plan.corridor_band_count,
-        'extended': price_plan.local_band_count + price_plan.intralata_band_count + price_plan.interlata_band_count + price_plan.interstate_band_count + price_plan.corridor_band_count + price_plan.canadian_band_count,
-        'misc': price_plan.local_band_count + price_plan.intralata_band_count + price_plan.interlata_band_count + price_plan.interstate_band_count + price_plan.corridor_band_count + price_plan.canadian_band_count + price_plan.extended_band_count,
+        "local": 0,
+        "intralata": price_plan.local_band_count,
+        "interlata": price_plan.local_band_count + price_plan.intralata_band_count,
+        "interstate": price_plan.local_band_count
+        + price_plan.intralata_band_count
+        + price_plan.interlata_band_count,
+        "corridor": price_plan.local_band_count
+        + price_plan.intralata_band_count
+        + price_plan.interlata_band_count
+        + price_plan.interstate_band_count,
+        "canadian": price_plan.local_band_count
+        + price_plan.intralata_band_count
+        + price_plan.interlata_band_count
+        + price_plan.interstate_band_count
+        + price_plan.corridor_band_count,
+        "extended": price_plan.local_band_count
+        + price_plan.intralata_band_count
+        + price_plan.interlata_band_count
+        + price_plan.interstate_band_count
+        + price_plan.corridor_band_count
+        + price_plan.canadian_band_count,
+        "misc": price_plan.local_band_count
+        + price_plan.intralata_band_count
+        + price_plan.interlata_band_count
+        + price_plan.interstate_band_count
+        + price_plan.corridor_band_count
+        + price_plan.canadian_band_count
+        + price_plan.extended_band_count,
     }
     band_offsets = {
         0: 0,
@@ -259,24 +323,27 @@ def determine_npa(index, npa_offset_map):
     return None
 
 
-def parse_nxx_tables(data: bytes, table_count: int, table_offset: int, npa_groups: List[NpaGroup]) -> List[NxxTable]:
+def parse_nxx_tables(
+    data: bytes, table_count: int, table_offset: int, npa_groups: List[NpaGroup]
+) -> List[NxxTable]:
     """Parse NXX tables from the decompressed R94 data."""
-    # Create an offset map for the NPA groups so we can assign the NPA to the NXX tables
+    # Group headers may repeat the same NPA for different price-category buckets.
+    # Build a range map so each NXX bitmap table can be associated back to its group owner.
     # NPA: [[low, high], [low, high], ...]
     npa_offset_map = {}
     offset = 0
     for group in npa_groups:
         if group.npa not in npa_offset_map:
             npa_offset_map[group.npa] = []
-        npa_offset_map[group.npa].append(
-            [offset, offset + group.nxx_table_count])
+        npa_offset_map[group.npa].append([offset, offset + group.nxx_table_count])
         offset += group.nxx_table_count
     cursor = table_offset
     nxx_tables = []
     for i in range(table_count):
-        nxx_data_raw = data[cursor + 3:cursor + 103]
+        nxx_data_raw = data[cursor + 3 : cursor + 103]
         nxx_entries = [
-            NxxEntry(nxx=(200 + j), enabled=bool((nxx_data_raw[j // 8] >> (j % 8)) & 1)) for j in range(800)
+            NxxEntry(nxx=(200 + j), enabled=bool((nxx_data_raw[j // 8] >> (j % 8)) & 1))
+            for j in range(800)
         ]
         nxx_table = NxxTable(
             npa=determine_npa(i, npa_offset_map),
@@ -292,15 +359,19 @@ def parse_nxx_tables(data: bytes, table_count: int, table_offset: int, npa_group
 
 def read_ratefile(file_path: str) -> RateFile:
     """Read a rate file and return a RateFile object."""
-    with open(file_path, 'rb') as f:
+    with open(file_path, "rb") as f:
         data = f.read()
+
+    if len(data) < 268:
+        raise ValueError(
+            f"File is too short to contain an R94 header: {len(data)}B found, 268B required."
+        )
 
     # Read the header
     header = RateFileHeader(
         is_ratefile=data[24] == 1,
-        filesize=int.from_bytes(data[1:5], byteorder='little'),
-        description=data[210:210 + data[209]
-                         ].decode('ascii', errors='replace'),
+        filesize=int.from_bytes(data[1:5], byteorder="little"),
+        description=data[210 : 210 + data[209]].decode("ascii", errors="replace"),
         local_band_count=data[152],
         intra_lata_band_count=data[153],
         inter_lata_band_count=data[154],
@@ -309,8 +380,8 @@ def read_ratefile(file_path: str) -> RateFile:
         canadian_band_count=data[157],
         extended_band_count=data[158],
         misc_band_count=data[159],
-        home_npa=data[18:21].decode(errors='ignore'),
-        home_nxx=data[21:24].decode(errors='ignore'),
+        home_npa=data[18:21].decode(errors="ignore"),
+        home_nxx=data[21:24].decode(errors="ignore"),
     )
 
     # Uncompress the data
@@ -321,37 +392,51 @@ def read_ratefile(file_path: str) -> RateFile:
         raise ValueError("Decompressed data is empty or invalid.")
     if not len(decompressed_data) == header.filesize:
         raise ValueError(
-            f"Decompressed data size {len(decompressed_data)}B does not match expected size {header.filesize}B.")
+            f"Decompressed data size {len(decompressed_data)}B does not match expected size {header.filesize}B."
+        )
 
     # Parse the surcharges
     surcharges = parse_surcharges(decompressed_data)
+
+    # Parse the default NPA price table for all NPAs 200-999.
+    npa_prices = parse_npa_prices(decompressed_data)
 
     # Read the price bands
     price_plan = parse_price_plan(decompressed_data)
 
     # Read intra-state NPA information
-    npa_groups = parse_npa_groups(
-        decompressed_data, price_plan.npa_group_count)
+    npa_groups = parse_npa_groups(decompressed_data, price_plan.npa_group_count)
 
     # And the NXX tables
     nxx_tables = parse_nxx_tables(
-        decompressed_data, price_plan.nxx_table_count, price_plan.nxx_table_offset, npa_groups)
+        decompressed_data,
+        price_plan.nxx_table_count,
+        price_plan.nxx_table_offset,
+        npa_groups,
+    )
 
-    return RateFile(header=header, surcharges=surcharges, price_plan=price_plan, npa_groups=npa_groups, nxx_tables=nxx_tables)
+    return RateFile(
+        header=header,
+        surcharges=surcharges,
+        price_plan=price_plan,
+        npa_prices=npa_prices,
+        npa_groups=npa_groups,
+        nxx_tables=nxx_tables,
+    )
 
 
 @click.command()
 @click.option(
-    '--file', '-f', default='elcotel-playground/stock.R94', help='Path to the rate file'
+    "--file", "-f", default="elcotel-playground/stock.R94", help="Path to the rate file"
 )
 def main(file):
     try:
         parse = read_ratefile(file)
     except FileNotFoundError:
-        print(f'File not found: {file}')
+        print(f"File not found: {file}")
         sys.exit(1)
     print(parse)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
