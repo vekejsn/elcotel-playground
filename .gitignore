@@ -1,2 +1,8 @@
 __pycache__
-ratefiles
+.pytest_cache
+ratefiles/*
+# Keep this one ratefile, for tests
+!ratefiles/
+!ratefiles/208209BN.R94
+ratefile/cache/
+ratefile/data/

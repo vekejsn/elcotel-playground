@@ -1,0 +1,80 @@
+{
+  "header": {
+    "description": "Example generated rate file",
+    "home_npa": "315",
+    "home_nxx": "200"
+  },
+  "price_bands": [
+    {
+      "id": "local_1",
+      "category": "local",
+      "initial_rate": 10,
+      "initial_time": 255,
+      "additional_rate": 5,
+      "additional_time": 255
+    },
+    {
+      "id": "intra_1",
+      "category": "intralata",
+      "initial_rate": 20,
+      "initial_time": 60,
+      "additional_rate": 10,
+      "additional_time": 60
+    }
+  ],
+  "npa_defaults": [
+    {
+      "npa": 315,
+      "kind": "nxx_specific"
+    },
+    {
+      "npa_range": [416, 418],
+      "kind": "price_band",
+      "band": "intra_1"
+    }
+  ],
+  "nxx_overrides": [
+    {
+      "npa": 315,
+      "band": "local_1",
+      "dial_pattern": 0,
+      "flags": 0,
+      "nxx": [200, 201, 555]
+    },
+    {
+      "npa": 315,
+      "band": "intra_1",
+      "dial_pattern": 3,
+      "flags": 0,
+      "nxx_ranges": [[300, 305]]
+    }
+  ],
+  "unlisted": [
+    {
+      "npa": 315,
+      "category": "local",
+      "band": "local_1",
+      "dial_pattern": 0,
+      "flags": 0
+    },
+    {
+      "npa": 315,
+      "category": "intralata",
+      "band": "intra_1",
+      "dial_pattern": 3,
+      "flags": 0
+    }
+  ],
+  "surcharges": {
+    "local": {
+      "coin": 0,
+      "paof_bell": 0,
+      "paof_comm": 0,
+      "paof_collect": 0,
+      "paof_addtnl": 0,
+      "chip_card": 0,
+      "spare_1": 0,
+      "spare_2": 0
+    }
+  }
+}

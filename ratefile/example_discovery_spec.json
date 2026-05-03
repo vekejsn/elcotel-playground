@@ -1,0 +1,36 @@
+{
+  "mode": "discovery",
+  "discovery_mode": "offline",
+  "use_offline_validation": true,
+  "header": {
+    "description": "Example discovery-generated rate file",
+    "home_npa": "315",
+    "home_nxx": "200"
+  },
+  "sources": {
+    "exchange_data": [
+      "elcotel-playground/ratefile/generation/example_exchange_data.csv"
+    ]
+  },
+  "pricing": {
+    "bands": [
+      {"id": "local_1", "category": "local", "initial_rate": 10, "initial_time": 255, "additional_rate": 5, "additional_time": 255},
+      {"id": "intra_1", "category": "intralata", "initial_rate": 20, "initial_time": 60, "additional_rate": 10, "additional_time": 60},
+      {"id": "inter_1", "category": "interlata", "initial_rate": 30, "initial_time": 60, "additional_rate": 15, "additional_time": 60},
+      {"id": "state_1", "category": "interstate", "initial_rate": 40, "initial_time": 60, "additional_rate": 20, "additional_time": 60},
+      {"id": "can_1", "category": "canadian", "initial_rate": 45, "initial_time": 60, "additional_rate": 20, "additional_time": 60},
+      {"id": "corr_1", "category": "corridor", "initial_rate": 50, "initial_time": 60, "additional_rate": 25, "additional_time": 60}
+    ],
+    "relationship_map": {
+      "local": "local_1",
+      "intralata": "intra_1",
+      "interlata": "inter_1",
+      "interstate": "state_1",
+      "canadian": "can_1",
+      "corridor": "corr_1"
+    },
+    "special_npas": {
+      "corridor": [809]
+    }
+  }
+}
