@@ -1,12 +1,12 @@
 # elcotel-playground
 
-Tools for working with Elcotel payphone files — parsing them, writing them, generating new ones from scratch, and verifying corpus roundtrip fidelity.
+Tools for working with Elcotel payphone files - parsing them, writing them, generating new ones from scratch, and verifying corpus roundtrip fidelity.
 
 ## The R94 format
 
 An R94 file has two parts: a fixed 268-byte header, followed by a body compressed with a simple zero-run encoding (a lone `0x00` byte is an escape; the next byte gives the count of zeros to emit).
 
-The decompressed body is a flat byte stream with no length prefixes or section markers — everything is addressed by fixed offsets derived from counts stored in the header. The layout is:
+The decompressed body is a flat byte stream with no length prefixes or section markers - everything is addressed by fixed offsets derived from counts stored in the header. The layout is:
 
 | Offset | Size | Contents |
 |--------|------|----------|
@@ -21,7 +21,7 @@ Each NPA default byte is either a token (`0` = restricted, `253` = unlimited, `2
 
 The same NPA can appear in multiple group rows because it may have NXX overrides in different band categories (e.g. local *and* intralata exchanges within the same area code).
 
-The first header byte is consistently `0x06` across all known valid files but is undocumented — the writer preserves it from templates without interpreting it.
+The first header byte is consistently `0x06` across all known valid files but is undocumented - the writer preserves it from templates without interpreting it.
 
 ## S94 format (Speed Dial 94)
 
@@ -60,7 +60,7 @@ The file has two parts: a fixed 168-byte header (same format as S94), followed b
 | 29 | 1 | Additional time in minutes |
 | 30 | 1 | LATA type (0–8) |
 
-The pattern field can hold two patterns separated by a comma — the first pattern is matched first, falling back to the second if no match.
+The pattern field can hold two patterns separated by a comma - the first pattern is matched first, falling back to the second if no match.
 
 ## P99 companion files
 
@@ -82,9 +82,9 @@ All three formats (R94, S94, P94) share:
 
 **Read** an existing R94 file and print a human-readable summary, or export the parsed model and low-level writer payload as JSON.
 
-**Create** an R94 file from a writer JSON payload — useful for re-serializing after manual edits to a dumped payload.
+**Create** an R94 file from a writer JSON payload - useful for re-serializing after manual edits to a dumped payload.
 
-**Generate** an R94 file from a high-level tariff specification. This is where most of the complexity lives — see generation modes below.
+**Generate** an R94 file from a high-level tariff specification. This is where most of the complexity lives - see generation modes below.
 
 **Verify** a directory of R94 files for parse success and byte-perfect write-back roundtrip.
 
@@ -126,24 +126,24 @@ You provide a JSON or YAML document that defines price bands, NPA default rules,
 
 Instead of manually listing every exchange, you give the generator a home NPA/NXX and it figures out which exchanges should be local, intralata, interlata, and so on. Relationships are classified in this precedence:
 
-1. **invalid** — unassigned NPA/NXX
-2. **local** — same exchange, or listed in a local calling table, or same rate center
-3. **corridor / extended / misc** — policy-driven overrides for specific NPAs (e.g. corridor routes to Mexico)
-4. **canadian** — cross-border when home is US
-5. **interstate** — different country or different state
-6. **intralata** — same LATA
-7. **interlata** — different LATA (default toll)
+1. **invalid** - unassigned NPA/NXX
+2. **local** - same exchange, or listed in a local calling table, or same rate center
+3. **corridor / extended / misc** - policy-driven overrides for specific NPAs (e.g. corridor routes to Mexico)
+4. **canadian** - cross-border when home is US
+5. **interstate** - different country or different state
+6. **intralata** - same LATA
+7. **interlata** - different LATA (default toll)
 
 Two discovery sources are available:
 
-- **offline** — you provide exchange datasets (NANPA tab-delimited `.txt`, CNAC CSV, or JSON). The generator loads them, classifies each exchange, and builds the spec.
-- **api-lata / api-lir** — queries [LocalCallingGuide](https://localcallingguide.com) for prefix, rate center, and LATA/LIR data, then validates against downloaded NANPA/CNAC datasets. API responses are cached as JSON in `ratefile/cache/`.
+- **offline** - you provide exchange datasets (NANPA tab-delimited `.txt`, CNAC CSV, or JSON). The generator loads them, classifies each exchange, and builds the spec.
+- **api-lata / api-lir** - queries [LocalCallingGuide](https://localcallingguide.com) for prefix, rate center, and LATA/LIR data, then validates against downloaded NANPA/CNAC datasets. API responses are cached as JSON in `ratefile/cache/`.
 
 Downloaded NANPA/CNAC ZIPs are extracted and discarded; only the parsed data files remain in `ratefile/data/`.
 
 ## Usage
 
-All scripts use [PEP 723](https://peps.python.org/pep-0723/) inline metadata, so with [uv](https://docs.astral.sh/uv/) installed you can run them directly — no venv or pip needed.
+All scripts use [PEP 723](https://peps.python.org/pep-0723/) inline metadata, so with [uv](https://docs.astral.sh/uv/) installed you can run them directly - no venv or pip needed.
 
 ### Read a file
 
@@ -190,4 +190,4 @@ uv run verify_ratefiles.py /path/to/ratefiles --limit 20
 
 ## Dependencies
 
-The scripts declare their dependencies inline via PEP 723 metadata. The main ones are `pydantic` (for parsed model validation) and `click` (for CLI argument parsing). If running without uv, install them manually — the codebase has no other requirements.
+The scripts declare their dependencies inline via PEP 723 metadata. The main ones are `pydantic` (for parsed model validation) and `click` (for CLI argument parsing). If running without uv, install them manually - the codebase has no other requirements.
