@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>C94 settings editor</title>
+  <link rel="stylesheet" href="/editor.css">
+  <script src="/editor.js" defer></script>
+</head>
+<body>
+  <header><h1>C94 settings editor</h1><p>Edit settings, not bytes. Your files stay on this computer.</p></header>
+  <main>
+    <section class="toolbar">
+      <label class="button">Open a C94 file <input id="file" type="file" accept=".c94" hidden></label>
+      <span id="firmware">No file open</span>
+      <button id="save" disabled>Download edited C94</button>
+      <button id="reset" disabled>Discard edits</button>
+    </section>
+    <p id="message" role="status" aria-live="polite">Open an existing file to get started. Saving creates a new file.</p>
+    <section id="editor" hidden>
+      <label>Description <input id="description" maxlength="58" type="text"></label>
+      <div class="filters">
+        <label>Find a setting <input id="search" type="search" placeholder="incoming calls, language, R437…"></label>
+        <label>Category <select id="category"><option value="">All categories</option></select></label>
+        <label class="check"><input id="advanced" type="checkbox"> Show read-only / unconfirmed settings</label>
+      </div>
+      <p class="hint">ON asserts the setting's name: for “Disable …”, ON means disabled. Unknown settings stay unchanged.</p>
+      <p id="count"></p>
+      <div id="settings"></div>
+      <details id="shutdown-section" hidden>
+        <summary>Call restrictions during scheduled shutdowns</summary>
+        <p>Set schedule 1 with R463/R464 and schedule 2 with R465/R466. Check a box to restrict that call type during the schedule. Other bits are preserved.</p>
+        <div id="shutdown"></div>
+      </details>
+      <details><summary>What happened to Lo, Hi, Token and Address?</summary>
+        <p>Those are implementation details, not settings to edit. Lo/Hi select which firmware versions the old editor supports; Token/Address describe binary storage. This editor handles them for you.</p>
+        <p>It validates known editor ranges, converts dollars and times automatically, and checks the result can be read back. That does not prove a setting is suitable for your particular phone or telephone service.</p>
+        <p>Inline macro programs and settings with unconfirmed meanings or conflicting definitions are read-only here.</p>
+      </details>
+    </section>
+  </main>
+</body>
+</html>

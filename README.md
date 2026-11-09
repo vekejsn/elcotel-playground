@@ -66,9 +66,70 @@ The pattern field can hold two patterns separated by a comma - the first pattern
 
 When a P94 file has more than 50 records, the extended records (51–250) are stored in a companion `.P99` file with the same 168-byte header format. The parser automatically detects and merges records from the `.P99` file when reading; the writer creates or deletes the `.P99` as needed based on record count.
 
+## C94 format (Registers and Options)
+
+C94 files contain a 168-byte header and a zero-run-compressed 4096-byte
+register/options image. Nine firmware-specific maps cover LP 05.03.00–05.04.00
+and KX 01.00.00–01.03.00. See the [format notes](c94file/FORMAT.md)
+and the [parameter-by-parameter reference](c94file/PARAMETERS.md) for setting
+meanings, ranges, units, macro commands, firmware differences and explicit gaps.
+
+### Simple browser editor
+
+```bash
+uv run c94_editor.py
+```
+
+Open **http://127.0.0.1:8094**, choose your C94 file, change the named settings,
+then click **Download edited C94**. It uses ON/OFF switches, macro/language
+dropdowns, dollars, clock times, and shutdown-period checkboxes. Search and
+category filters help find settings. The source file is never overwritten.
+Stop the local server with Ctrl+C.
+
+**Lo/Hi are firmware-version bounds, not value limits.** For LP, codes 0–4
+mean 05.03.00, 05.03.01, 05.03.02, 05.03.03, 05.04.00. For KX, codes 0–3
+mean 01.00.00, 01.01.00, 01.02.00, 01.03.00. The simple editor handles these
+internally; you don't edit them or binary offsets/tokens.
+
+Unknown/reserved settings, conflicting definitions, and inline macro programs
+are read-only. They are preserved along with all other untouched bytes.
+Confirmed enum values use descriptive choices, including LP 05.04 operation
+modes, routing thresholds and keypad anti-fraud modes. Labels are not assumed
+to apply to other firmware; partially known settings remain explicitly marked.
+KX 01.02/01.03 also have branch-verified anti-fraud choices (including the
+default selector), routing thresholds, operation modes and LCD widths.
+Coin-line modes require a capable build/hardware; 01.00/01.01 enum additions
+remain unverified. KX volume codes are not assigned guessed gain labels.
+Known editor ranges are checked on save, but appropriate operational values
+still depend on your phone and service. Files are processed locally; nothing
+is sent to an external service. Bypass codes/passwords are shown as plain-text values.
+
+### Inspection and low-level tools
+
+```bash
+# Inspect a template
+uv run c94_read.py --file myphone.C94 --summary
+
+# Explain individual settings and their current values
+uv run c94_read.py --file myphone.C94 --register 204 --register 437
+
+# Export lossless hex-byte JSON and decoded registers (may contain credentials)
+uv run c94_read.py --file myphone.C94 --json-out image.json --registers-out registers.json
+
+# Rebuild from the lossless payload (decoded register exports are inspection-only)
+uv run c94_create.py image.json rebuilt.C94 --verify-roundtrip
+
+# Verify all files recursively, including byte-perfect recompression
+uv run verify_c94.py ./c94files
+```
+
+The reader preserves unknown bytes and rejects damaged/truncated images.
+Register addresses refer to the complete expanded body, including its
+58-byte copyright prefix; these are not the separate SSB payload offsets.
+
 ## Shared encoding
 
-All three formats (R94, S94, P94) share:
+All four formats (R94, S94, P94, C94) share:
 
 - **Zero-run compression**: Runs of 1–254 zeros are encoded as `[0x00, count]`. The decompressor tolerates trailing zeros without a count (EOF edge case).
 

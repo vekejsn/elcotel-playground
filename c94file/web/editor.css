@@ -1,0 +1,19 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #1c2938; background: #f3f5f7; }
+body { margin: 0; } header, main { max-width: 1100px; margin: auto; padding: 20px 24px; }
+header { padding-bottom: 0; } h1 { margin-bottom: 6px; } header p { color: #586575; }
+button, .button { cursor: pointer; border: 1px solid #bcc6d1; border-radius: 6px; background: white; padding: 9px 14px; font: inherit; }
+#save { background: #1555a0; color: white; border-color: #1555a0; } button:disabled { opacity: .5; cursor: default; }
+.toolbar, .filters { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; } #firmware { flex: 1; }
+#message { padding: 12px; background: #e5edf7; border-radius: 6px; } #message.error { background: #ffe4e3; color: #8e1717; }
+input:not([type=checkbox]), select { font: inherit; padding: 8px; border: 1px solid #aeb9c6; border-radius: 5px; min-width: 160px; max-width: 100%; box-sizing: border-box; }
+input[type=checkbox] { width: 19px; height: 19px; accent-color: #1555a0; }
+label:not(.button):not(.check) { display: grid; gap: 5px; } .filters { margin-top: 20px; } .check { display: flex; gap: 8px; align-items: center; }
+.hint, .help, #count { color: #647080; font-size: .9rem; }
+.setting { background: white; border: 1px solid #d9dfe6; border-radius: 7px; padding: 15px; margin: 10px 0; display: grid; grid-template-columns: minmax(240px, 1fr) minmax(170px, 300px); gap: 10px 24px; }
+.setting.changed { border-left: 5px solid #1555a0; } .setting.readonly { background: #f9fafb; }
+.name { font-weight: 600; } .reg { font-size: .8rem; color: #748092; margin-right: 8px; }
+.help { margin: 5px 0; } .notes { grid-column: 1 / -1; font-size: .88rem; } .value { display: flex; align-items: center; gap: 8px; }
+.value input:not([type=checkbox]), .value select { width: 100%; } .readonly-value { overflow-wrap: anywhere; }
+details { margin-top: 20px; padding: 14px; border: 1px solid #d9dfe6; border-radius: 6px; background: white; } summary { cursor: pointer; font-weight: 600; }
+.shutdown-row { display: grid; grid-template-columns: 1fr 110px 110px; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e6eaf0; } .shutdown-row label { display: flex !important; align-items: center; }
+@media (max-width: 650px) { .setting { grid-template-columns: 1fr; } header, main { padding: 16px; } .shutdown-row { grid-template-columns: 1fr 80px 80px; } }
